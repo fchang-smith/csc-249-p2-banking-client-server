@@ -1,0 +1,26 @@
+; Define the ABNF for the ATM application message protocol
+
+; Character Definitions
+CR           = %d13  ; ASCII Carriage Return
+LF           = %d10  ; ASCII Line Feed
+ALPHA        = %d65-90 / %d97-122 ; Uppercase and lowercase letters
+DIGIT        = %d48-57 ; Digits 0-9
+
+; Request Messages
+login-request    = account-number "," pin CRLF
+deposit-request  = "d," amount CRLF
+withdrawal-request = "w," amount CRLF
+balance-inquiry-request = "b" CRLF
+
+account-number  = 2ALPHA "-" 5DIGIT
+pin             = 4DIGIT
+amount          = *(DIGIT) "." 2DIGIT
+
+; Response Messages
+login-response = "00" / "01" CRLF
+deposit-response = "00" / "01" CRLF
+withdrawal-response = "00" / "01" CRLF
+balance-inquiry-response = amount CRLF
+
+; Common Definitions
+CRLF        = CR LF
