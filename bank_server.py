@@ -215,59 +215,158 @@ def service_connection(sel, key, mask):
     sock = key.fileobj
     data = key.data
     if mask & selectors.EVENT_READ:
-        recv_data = sock.recv(1024)  # Should be ready to read
+        valid_code = data.valid_code
+        recv_data = sock.recv(1024)
         recv_data = recv_data.decode("utf-8")
-        if recv_data:
-            if data.valid_code == "11":
-                strArray = recv_data.split(";")
-                ac = strArray[0]
-                pn = strArray[1]
-                if get_acct(ac):
-                    if get_acct(ac).acct_status == True:
-                        print("Account number is matching!")
-                        data.acct_num = get_acct(ac).acct_number
-                        if pn == ALL_ACCOUNTS[ac].acct_pin:
-                            data.msg = "0"
-                            data.valid_code = "00"
-                            get_acct(ac).acct_status = False
-                            print("PIN is matching!")
-                        else:
-                            print("PIN is not matching")
-                            data.msg = "1"
-                    else:
-                        print("The account is in use")
-                        data.msg = "-2"
-                else:
-                    print("Account number is not matching")
-                    data.msg = "1"
-            elif data.valid_code == "00":
-                request = recv_data
-                if request:
-                    if request_format(request):
-                        result_code= analyze_request(request, ALL_ACCOUNTS[data.acct_num])
-                        if result_code == 1:
-                            result_code == 111
-                        data.msg = str(result_code)
-                    elif request == "b":
-                        data.msg = str(round(ALL_ACCOUNTS[data.acct_num].acct_balance, 2))
-                    elif request == "x":
-                        ALL_ACCOUNTS[data.acct_num].acct_status = True
-                        sel.unregister(sock)
-                        sock.close()
-                    else:
-                        data.msg = "100"         
+        validation = valid_command(valid_code, recv_data)
+        if validation == 0: # valid_code == 00 & r
+            if check_command_format(recv_data):
+                data.msg = process_command(recv_data, ALL_ACCOUNTS[data.acct_num]) # r;b/w/d;amt/code
+            else:
+                data.msg = "r;;1"
+        elif validation == 1: # valid_code == 11 & l
+            if check_login_format(recv_data):
+                if process_login(recv_data): # login successfully
+                    data.acct_num = recv_data.split(";")[1]
+                    data.msg = "l;0;0"
+                    ALL_ACCOUNTS[data.acct_num].acct_status = False
+                else: # wrong acct_num/pin
+                    data.msg = "l;1;1"
+            else: # wrong login msg format
+                data.msg = "l;1;"
+        elif validation == 2: # want to do transection before login
+            data.msg = ";;1" 
+        else: # valid_code == 00  & invalid command
+            data.msg = ";;"
     if mask & selectors.EVENT_WRITE:
-        if data.msg:
-            print(f"Sending {data.msg!r} to {data.addr}")
-            data.msg = data.msg.encode("utf-8")
-            sent = sock.send(data.msg)  # Should be ready to write
-            if (data.msg == "1".encode("utf-8")):
-                print(f"Closing connection to {data.addr}")
-                ALL_ACCOUNTS[data.acct_num].acct_status = True
-                sel.unregister(sock)
-                sock.close()
-            else:    
-                data.msg = data.msg[sent:]
+        print(f"Sending {data.msg!r} to {data.addr}")
+        data.msg = data.msg.encode("utf-8")
+        sent = sock.send(data.msg)
+        if data.msg.decode("utf-8") == ";;1" or data.msg.decode("utf-8") == "l;1;" or data.msg.decode("utf-8") == "l;1;1":
+            print(f"Closing connection to {data.addr}")
+            sel.unregister(sock)
+            sock.close()
+        elif data.msg.decode("utf-8") == "r;x;0":
+            ALL_ACCOUNTS[data.acct_num].acct_status = True
+            print(f"Closing connection to {data.addr}")
+            sel.unregister(sock)
+            sock.close()
+        else:    
+            data.msg = data.msg[sent:]
+
+def process_login(command):
+    command = command.split(";")
+    ac_num = command[1]
+    ac_pin = int(command[2])
+    if get_acct(ac_num):
+        if ALL_ACCOUNTS[ac_num].acct_pin == ac_pin:
+            return True
+    return False
+
+def check_login_format(command):
+    command = command.split(";")
+    return acctNumberIsValid(command[1]) and acctPinIsValid(command[2])
+
+def check_command_format(command):
+    command = command.split(";")
+    check = False
+    if len(command) == 3:
+        if command[1] == "b" and len(command[2]==0):
+            check = True
+        if command[1] == "w" and amountIsValid(command[2]):
+            check = True
+        if command[1] == "d" and amountIsValid(command[2]):
+            check = True
+    return check
+        
+def process_command(command, account):
+    command = command.split(";")
+    if command[1] == "b":
+        balance = round(account.acct_balance, 2)
+        return "r;b;" + str(balance)
+    elif command[1] == "w":
+        amt = command[2]
+        result_code = account.withdraw(amt)[1]
+        return "r;w;" + str(result_code)
+    else:
+        amt = command[2]
+        result_code = account.deposit(amt)[1]
+        return "r;d;" + str(result_code)
+
+# int 0 -> valid command (b/d/w); 
+# int 1 -> need to login (l);
+# int 2 -> no login
+# int 3 -> invalid command
+def valid_command(valid_code, recv_data): 
+    command = recv_data[0]
+    if valid_code == "00":
+        if command == "r":
+            return 0
+        else:
+            return 1
+    else:
+        if command == "l":
+            return 3
+        else:
+            return 2
+
+# def service_connection(sel, key, mask):
+#     sock = key.fileobj
+#     data = key.data
+#     if mask & selectors.EVENT_READ:
+#         recv_data = sock.recv(1024)  # Should be ready to read
+#         recv_data = recv_data.decode("utf-8")
+#         if recv_data:
+#             if data.valid_code == "11":
+#                 strArray = recv_data.split(";")
+#                 ac = strArray[0]
+#                 pn = strArray[1]
+#                 if get_acct(ac):
+#                     if get_acct(ac).acct_status == True:
+#                         print("Account number is matching!")
+#                         data.acct_num = get_acct(ac).acct_number
+#                         if pn == ALL_ACCOUNTS[ac].acct_pin:
+#                             data.msg = "0"
+#                             data.valid_code = "00"
+#                             get_acct(ac).acct_status = False
+#                             print("PIN is matching!")
+#                         else:
+#                             print("PIN is not matching")
+#                             data.msg = "1"
+#                     else:
+#                         print("The account is in use")
+#                         data.msg = "-2"
+#                 else:
+#                     print("Account number is not matching")
+#                     data.msg = "1"
+#             elif data.valid_code == "00":
+#                 request = recv_data
+#                 if request:
+#                     if request_format(request):
+#                         result_code= analyze_request(request, ALL_ACCOUNTS[data.acct_num])
+#                         if result_code == 1:
+#                             result_code == 111
+#                         data.msg = str(result_code)
+#                     elif request == "b":
+#                         data.msg = str(round(ALL_ACCOUNTS[data.acct_num].acct_balance, 2))
+#                     elif request == "x":
+#                         ALL_ACCOUNTS[data.acct_num].acct_status = True
+#                         sel.unregister(sock)
+#                         sock.close()
+#                     else:
+#                         data.msg = "100"         
+#     if mask & selectors.EVENT_WRITE:
+#         if data.msg:
+#             print(f"Sending {data.msg!r} to {data.addr}")
+#             data.msg = data.msg.encode("utf-8")
+#             sent = sock.send(data.msg)  # Should be ready to write
+#             if (data.msg == "1".encode("utf-8")):
+#                 print(f"Closing connection to {data.addr}")
+#                 ALL_ACCOUNTS[data.acct_num].acct_status = True
+#                 sel.unregister(sock)
+#                 sock.close()
+#             else:    
+#                 data.msg = data.msg[sent:]
 
 
 ##########################################################
