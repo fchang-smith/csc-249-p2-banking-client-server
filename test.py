@@ -1,4 +1,3 @@
-str = "r;b;".split(";")
-print(len(str))
-str = str[2]
-print(len(str))
+str = "r;b;1234"
+print(str[:4])
+print(str[4:])

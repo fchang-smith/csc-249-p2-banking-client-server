@@ -218,14 +218,14 @@ def service_connection(sel, key, mask):
         valid_code = data.valid_code
         recv_data = sock.recv(1024)
         recv_data = recv_data.decode("utf-8")
-        validation = valid_command(valid_code, recv_data)
+        validation = valid_command(valid_code, recv_data) # check valid_code & r/l
         if validation == 0: # valid_code == 00 & r
-            if check_command_format(recv_data):
-                data.msg = process_command(recv_data, ALL_ACCOUNTS[data.acct_num]) # r;b/w/d;amt/code
+            if check_command_format(recv_data): # r;(b/d/w/x);amt(opt)
+                data.msg = process_command(recv_data, ALL_ACCOUNTS[data.acct_num]) # r;b/w/d/x;amt/code
             else:
-                data.msg = "r;;1"
+                data.msg = "r;;1" # invalid msg format, does not specify b/d/w/x or invalid amt
         elif validation == 1: # valid_code == 11 & l
-            if check_login_format(recv_data):
+            if check_login_format(recv_data): # l;acct_num;pin
                 if process_login(recv_data): # login successfully
                     data.acct_num = recv_data.split(";")[1]
                     data.msg = "l;0;0"
@@ -236,30 +236,38 @@ def service_connection(sel, key, mask):
                 data.msg = "l;1;"
         elif validation == 2: # want to do transection before login
             data.msg = ";;1" 
-        else: # valid_code == 00  & invalid command
+        else: # validation = 3; valid_code == 00  & invalid command
             data.msg = ";;"
     if mask & selectors.EVENT_WRITE:
-        print(f"Sending {data.msg!r} to {data.addr}")
-        data.msg = data.msg.encode("utf-8")
-        sent = sock.send(data.msg)
-        if data.msg.decode("utf-8") == ";;1" or data.msg.decode("utf-8") == "l;1;" or data.msg.decode("utf-8") == "l;1;1":
-            print(f"Closing connection to {data.addr}")
-            sel.unregister(sock)
-            sock.close()
-        elif data.msg.decode("utf-8") == "r;x;0":
-            ALL_ACCOUNTS[data.acct_num].acct_status = True
-            print(f"Closing connection to {data.addr}")
-            sel.unregister(sock)
-            sock.close()
-        else:    
-            data.msg = data.msg[sent:]
+        if data.msg:
+            print(f"Sending {data.msg!r} to {data.addr}")
+            data.msg = data.msg.encode("utf-8")
+            sent = sock.send(data.msg)
+            if (data.msg.decode("utf-8") == ";;1" # want to do transection before login
+                or data.msg.decode("utf-8") == "l;1;" # Wrong login msg format
+                or data.msg.decode("utf-8") == "l;1;1"): # fail to login
+                print(f"Closing connection to {data.addr}")
+                sel.unregister(sock)
+                sock.close()
+            elif data.msg.decode("utf-8") == "r;x;0": # exit request
+                ALL_ACCOUNTS[data.acct_num].acct_status = True
+                print(f"Closing connection to {data.addr}")
+                sel.unregister(sock)
+                sock.close()
+            else:    
+                data.msg = data.msg[sent:]
 
 def process_login(command):
     command = command.split(";")
     ac_num = command[1]
-    ac_pin = int(command[2])
+    ac_pin = str(command[2])
+    print(ac_num)
+    print(ac_pin + " " + len(ac_pin) + " " + type(ac_pin))
+    print(get_acct(ac_num).acct_pin + " " + len(get_acct(ac_num).acct_pin) + " " + type(get_acct(ac_num).acct_pin))
     if get_acct(ac_num):
-        if ALL_ACCOUNTS[ac_num].acct_pin == ac_pin:
+        print("find account")
+        if str(get_acct(ac_num).acct_pin) == ac_pin:
+            print("pin matches")
             return True
     return False
 
@@ -277,6 +285,8 @@ def check_command_format(command):
             check = True
         if command[1] == "d" and amountIsValid(command[2]):
             check = True
+        if command[1] == "x" and len(command[2]==0):
+            check = True
     return check
         
 def process_command(command, account):
@@ -288,6 +298,8 @@ def process_command(command, account):
         amt = command[2]
         result_code = account.withdraw(amt)[1]
         return "r;w;" + str(result_code)
+    elif command[1] == "x":
+        return "r;x;0"
     else:
         amt = command[2]
         result_code = account.deposit(amt)[1]
@@ -303,10 +315,10 @@ def valid_command(valid_code, recv_data):
         if command == "r":
             return 0
         else:
-            return 1
+            return 3
     else:
         if command == "l":
-            return 3
+            return 1
         else:
             return 2
 

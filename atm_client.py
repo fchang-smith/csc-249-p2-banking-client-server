@@ -48,18 +48,71 @@ def get_from_server(sel):
                 if msg:
                     return msg.decode("utf-8")
 
+# 11 -> needs to terminate the program
+# 01 -> wrong input format, but allow to try again
+# d0 -> deposit ok
+# d1 -> deposit invalid amount
+# b0 -> balance ok
+# w0 -> withdraw ok
+# w1 -> withdraw invalid amt
+# w2 -> withdraw overdraft
+# l0 -> login ok
+def analyze_reply(msg):
+    if msg == "r;;1":
+        print("invalid msg format, does not specify b/d/w/x or invalid amt")
+        return "00"
+    elif msg == "l;1;1":
+        print("Account number and PIN do not match. Terminating ATM session.")
+        return "11"
+    elif msg == "l;1;":
+        print("wrong login msg format")
+        return "11"
+    elif msg == ";;1":
+        print("want to do transection before login")
+        return "11"
+    elif msg == "l;0;0":
+        print("Thank you, your credentials have been validated.")
+        return "l0"
+    elif msg == "l;2;":
+        print("The account is in use! Terminating ATM session")
+        return "11"
+    elif msg == ";;":
+        print("wrong input format, does not specify r/l")
+        return "00"
+    elif msg[:4] == "r;b;" and msg[4:].isnumeric():
+        print("successful get balance: " + msg[4:])
+        return "b0"
+    elif msg[:4] == "r;w":
+        if msg[4:] == "0":
+            print("successfully withdraw")
+            return "w0"
+        elif msg[4:] =="1":
+            print("invalid amount")
+            return "w1"
+        else:
+            print("overdraft account")
+            return "w2"
+    elif msg[0:4] == "r;d;":
+        if msg[4:] == "0":
+            print("successfully deposit")
+            return "d0"
+        else:
+            print("invalid amount")
+            return "d1"
+    elif msg == "r;x;0":
+        print("exit!")
+        return "11"
+    else:
+        print("reply not recognizable")
+        return "11"
 
 def login_to_server(sel, acct_num, pin):
     """ Attempt to login to the bank server. Pass acct_num and pin, get response, parse and check whether login was successful. """
-    validated = 1
-    sent = acct_num + ";" + pin
+    sent = "l;" + acct_num + ";" + pin
     send_to_server(sel, sent)
     msg = get_from_server(sel)
-    if msg == "0":
-        validated = 0
-    if msg == "-2":
-        validated = -2
-    return validated
+    return analyze_reply(msg)
+    
 
 def get_login_info():
     """ Get info from customer. Validate inputs, ask again if given invalid input. """
@@ -84,9 +137,10 @@ def process_deposit(sel, acct_num):
     """ Write this code. """
     amt = input()
     # communicate with the server to request the deposit, check response for success or failure.
-    send_to_server(sel, "d" + amt)
-    valid = get_from_server(sel)
-    if valid == "0":
+    send_to_server(sel, "r;d;" + amt)
+    reply = get_from_server(sel)
+    code = analyze_reply(reply)
+    if code == "d0":
         print("Deposit transaction completed.")
         bal = get_acct_balance(sel, acct_num)
         print("Your new balance is "+ bal)
@@ -96,10 +150,12 @@ def process_deposit(sel, acct_num):
 
 def get_acct_balance(sel, acct_num):
     """ Ask the server for current account balance. """
-    send_to_server(sel, "b")
-    bal = get_from_server(sel)
+    send_to_server(sel, "r;b;")
+    reply = get_from_server(sel)
+    code = analyze_reply(reply)
+    if code == "b0":
     # code needed here, to get balance from server then return it
-    return bal
+        return reply[4:]
 
 def process_withdrawal(sel, bal, acct_num):
     """ Write this code. """
@@ -108,13 +164,14 @@ def process_withdrawal(sel, bal, acct_num):
     if amt>bal:
         print("The amount to withdraw is more than your balance")
         return 
-    send_to_server(sel, "w" + amt)
-    valid = get_from_server(sel)
-    if valid == "0":
+    send_to_server(sel, "r;w;" + amt)
+    reply = get_from_server(sel)
+    code = analyze_reply(reply)
+    if code == "w0":
         print("Withdrawal transaction completed.")
         bal = get_acct_balance(sel, acct_num)
         print("Your new balance is " + bal)
-    elif valid == "111":
+    elif code == "w1":
         print("Invalid amount")
     else:
         print("Account overdraft")
@@ -130,7 +187,7 @@ def process_customer_transactions(sel, acct_num):
             print("Unrecognized choice, please try again.")
             continue
         if req == 'x':
-            send_to_server(sel, "x")
+            send_to_server(sel, "r;x;")
             # if customer wants to exit, break out of the loop
             break
         elif req == 'd':
@@ -149,15 +206,8 @@ def run_atm_core_loop(sock):
         login_check = True
     if login_check:
         validated = login_to_server(sel, acct_num, pin)
-        if validated == 0:
-            print("Thank you, your credentials have been validated.")
-        elif validated == -2:
+        if validated == "11":
             sock.close()
-            print("The account is in use! Terminating ATM session")
-            return False
-        else:
-            sock.close()
-            print("Account number and PIN do not match. Terminating ATM session.")
             return False
         process_customer_transactions(sel, acct_num)
         sock.close()
