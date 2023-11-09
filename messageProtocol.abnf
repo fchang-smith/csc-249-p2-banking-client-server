@@ -1,3 +1,21 @@
+pj2-phase2 ABNF:
+
+; Client message:
+client-msg = login-msg / transaction-msg
+
+login-msg = "l;" 8ALPHA ";" 4DIGIT
+transaction-msg = "d;" 1*DIGIT / "w;" 1*DIGIT / "b"
+
+; Server message:
+server-msg = login-response / transaction-response / error-response
+
+login-response = "l;" ("0" / "1" / "-2")
+transaction-response = "r;" ("b;" 1*DIGIT / "w;" ("0" / "1" / "111") / "d;" ("0" / "1" / "111"))
+error-response = "e;" 1*3DIGIT
+
+
+-pj2-phase1 ABNF below:
+
 ; Client message:
 client-msg = login-msg / transection-msg 
 
@@ -14,3 +32,4 @@ account-check = "-2" / "0" / "1"
 pin-check = "0" / "1"
 request-check = "111" / "100" / "0" / "2"
 balance = 1*DIGIT
+

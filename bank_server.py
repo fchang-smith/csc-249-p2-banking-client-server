@@ -217,27 +217,30 @@ def service_connection(sel, key, mask):
     if mask & selectors.EVENT_READ:
         valid_code = data.valid_code
         recv_data = sock.recv(1024)
-        recv_data = recv_data.decode("utf-8")
-        validation = valid_command(valid_code, recv_data) # check valid_code & r/l
-        if validation == 0: # valid_code == 00 & r
-            if check_command_format(recv_data): # r;(b/d/w/x);amt(opt)
-                data.msg = process_command(recv_data, ALL_ACCOUNTS[data.acct_num]) # r;b/w/d/x;amt/code
-            else:
-                data.msg = "r;;1" # invalid msg format, does not specify b/d/w/x or invalid amt
-        elif validation == 1: # valid_code == 11 & l
-            if check_login_format(recv_data): # l;acct_num;pin
-                if process_login(recv_data): # login successfully
-                    data.acct_num = recv_data.split(";")[1]
-                    data.msg = "l;0;0"
-                    ALL_ACCOUNTS[data.acct_num].acct_status = False
-                else: # wrong acct_num/pin
-                    data.msg = "l;1;1"
-            else: # wrong login msg format
-                data.msg = "l;1;"
-        elif validation == 2: # want to do transection before login
-            data.msg = ";;1" 
-        else: # validation = 3; valid_code == 00  & invalid command
-            data.msg = ";;"
+        if len(recv_data) > 0:
+            recv_data = recv_data.decode("utf-8")
+            print("recieving data: " + recv_data)
+            validation = valid_command(valid_code, recv_data) # check valid_code & r/l
+            if validation == 0: # valid_code == 00 & r
+                if check_command_format(recv_data): # r;(b/d/w/x);amt(opt)
+                    data.msg = process_command(recv_data, ALL_ACCOUNTS[data.acct_num]) # r;b/w/d/x;amt/code
+                else:
+                    data.msg = "r;;1" # invalid msg format, does not specify b/d/w/x or invalid amt
+            elif validation == 1: # valid_code == 11 & l
+                if check_login_format(recv_data): # l;acct_num;pin
+                    if process_login(recv_data): # login successfully
+                        data.acct_num = recv_data.split(";")[1]
+                        data.msg = "l;0;0"
+                        data.valid_code = "00"
+                        ALL_ACCOUNTS[data.acct_num].acct_status = False
+                    else: # wrong acct_num/pin
+                        data.msg = "l;1;1"
+                else: # wrong login msg format
+                    data.msg = "l;1;"
+            elif validation == 2: # want to do transection before login
+                data.msg = ";;1" 
+            else: # validation = 3; valid_code == 00  & invalid command
+                data.msg = ";;"
     if mask & selectors.EVENT_WRITE:
         if data.msg:
             print(f"Sending {data.msg!r} to {data.addr}")
@@ -262,11 +265,11 @@ def process_login(command):
     ac_num = command[1]
     ac_pin = str(command[2])
     print(ac_num)
-    print(ac_pin + " " + len(ac_pin) + " " + type(ac_pin))
-    print(get_acct(ac_num).acct_pin + " " + len(get_acct(ac_num).acct_pin) + " " + type(get_acct(ac_num).acct_pin))
+    print(ac_pin)
+    print("account_pin: " + get_acct(ac_num).acct_pin)
     if get_acct(ac_num):
         print("find account")
-        if str(get_acct(ac_num).acct_pin) == ac_pin:
+        if get_acct(ac_num).acct_pin == ac_pin:
             print("pin matches")
             return True
     return False
@@ -279,13 +282,15 @@ def check_command_format(command):
     command = command.split(";")
     check = False
     if len(command) == 3:
-        if command[1] == "b" and len(command[2]==0):
+        print(command[1])
+        print(command[2])
+        if command[1] == "b" and len(command[2])==0:
             check = True
-        if command[1] == "w" and amountIsValid(command[2]):
+        if command[1] == "w" and amountIsValid(float(command[2])):
             check = True
-        if command[1] == "d" and amountIsValid(command[2]):
+        if command[1] == "d" and amountIsValid(float(command[2])):
             check = True
-        if command[1] == "x" and len(command[2]==0):
+        if command[1] == "x" and len(command[2])==0:
             check = True
     return check
         
@@ -310,17 +315,20 @@ def process_command(command, account):
 # int 2 -> no login
 # int 3 -> invalid command
 def valid_command(valid_code, recv_data): 
-    command = recv_data[0]
-    if valid_code == "00":
-        if command == "r":
-            return 0
+    if len(recv_data) > 0:
+        command = recv_data[0]
+        if valid_code == "00":
+            if command == "r":
+                return 0
+            else:
+                return 3
         else:
-            return 3
+            if command == "l":
+                return 1
+            else:
+                return 2
     else:
-        if command == "l":
-            return 1
-        else:
-            return 2
+        return 3
 
 # def service_connection(sel, key, mask):
 #     sock = key.fileobj

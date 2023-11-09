@@ -1,3 +1,4 @@
-str = "r;b;1234"
-print(str[:4])
-print(str[4:])
+amount = "r;w;0"
+print(amount[:4])
+print(amount[4:])
+print(amount[:4] == "r;w;")

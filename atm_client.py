@@ -1,3 +1,4 @@
+import traceback
 #!/usr/bin/env python3
 #
 # Automated Teller Machine (ATM) client application.
@@ -58,6 +59,7 @@ def get_from_server(sel):
 # w2 -> withdraw overdraft
 # l0 -> login ok
 def analyze_reply(msg):
+    print("recieving msg: " + msg)
     if msg == "r;;1":
         print("invalid msg format, does not specify b/d/w/x or invalid amt")
         return "00"
@@ -79,10 +81,12 @@ def analyze_reply(msg):
     elif msg == ";;":
         print("wrong input format, does not specify r/l")
         return "00"
-    elif msg[:4] == "r;b;" and msg[4:].isnumeric():
+    elif (msg[:4] == "r;b;" 
+          and isinstance(float(msg[4:]), float) and (float(msg[4:]) >= 0) and (round(float(msg[4:]), 2) == float(msg[4:]))):
         print("successful get balance: " + msg[4:])
         return "b0"
-    elif msg[:4] == "r;w":
+    elif msg[:4] == "r;w;":
+        print("enter withdraw")
         if msg[4:] == "0":
             print("successfully withdraw")
             return "w0"
@@ -143,7 +147,7 @@ def process_deposit(sel, acct_num):
     if code == "d0":
         print("Deposit transaction completed.")
         bal = get_acct_balance(sel, acct_num)
-        print("Your new balance is "+ bal)
+        print("Your new balance is "+ str(bal))
     else:
         print("Invalid amount")
     return
@@ -155,13 +159,13 @@ def get_acct_balance(sel, acct_num):
     code = analyze_reply(reply)
     if code == "b0":
     # code needed here, to get balance from server then return it
-        return reply[4:]
+        return float(reply[4:])
 
 def process_withdrawal(sel, bal, acct_num):
     """ Write this code. """
     amt = input()
     #  communicate with the server to request the withdrawal, check response for success or failure.
-    if amt>bal:
+    if float(amt)>bal:
         print("The amount to withdraw is more than your balance")
         return 
     send_to_server(sel, "r;w;" + amt)
@@ -170,7 +174,7 @@ def process_withdrawal(sel, bal, acct_num):
     if code == "w0":
         print("Withdrawal transaction completed.")
         bal = get_acct_balance(sel, acct_num)
-        print("Your new balance is " + bal)
+        print("Your new balance is " + str(bal))
     elif code == "w1":
         print("Invalid amount")
     else:
@@ -200,22 +204,17 @@ def process_customer_transactions(sel, acct_num):
 def run_atm_core_loop(sock):
     sel = configure_selectors(sock)
     """ Given an active network connection to the bank server, run the core business loop. """
-    login_check = False
     acct_num, pin = get_login_info()
-    if acct_num != "" and pin != "":
-        login_check = True
-    if login_check:
-        validated = login_to_server(sel, acct_num, pin)
-        if validated == "11":
-            sock.close()
-            return False
-        process_customer_transactions(sel, acct_num)
-        sock.close()
+    validated = login_to_server(sel, acct_num, pin)
+    if validated == "11":
         print("ATM session terminating.")
+        sock.close()
         return True
     else:
-        sock.close()
-        print("ATM session terminating.")
+        process_customer_transactions(sel, acct_num)
+    
+    
+
 
 ##########################################################
 #                                                        #
@@ -232,6 +231,8 @@ def run_network_client():
             s.connect((HOST, PORT))
             run_atm_core_loop(s)
     except Exception as e:
+        print(e)
+        traceback.print_exc()
         print(f"Unable to connect to the banking server - exiting...")
 
 if __name__ == "__main__":
