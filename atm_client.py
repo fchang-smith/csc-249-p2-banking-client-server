@@ -78,6 +78,9 @@ def analyze_reply(msg):
     elif msg == "l;2;":
         print("The account is in use! Terminating ATM session")
         return "11"
+    elif msg == "l;;":
+        print("Account is in use")
+        return "11"
     elif msg == ";;":
         print("wrong input format, does not specify r/l")
         return "00"

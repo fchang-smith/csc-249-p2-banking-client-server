@@ -228,11 +228,13 @@ def service_connection(sel, key, mask):
                     data.msg = "r;;1" # invalid msg format, does not specify b/d/w/x or invalid amt
             elif validation == 1: # valid_code == 11 & l
                 if check_login_format(recv_data): # l;acct_num;pin
-                    if process_login(recv_data): # login successfully
+                    if process_login(recv_data) == 0: # login successfully
                         data.acct_num = recv_data.split(";")[1]
                         data.msg = "l;0;0"
                         data.valid_code = "00"
                         ALL_ACCOUNTS[data.acct_num].acct_status = False
+                    elif process_login(recv_data) == 2: # acct already logged in
+                        data.msg = "l;;"
                     else: # wrong acct_num/pin
                         data.msg = "l;1;1"
                 else: # wrong login msg format
@@ -248,7 +250,8 @@ def service_connection(sel, key, mask):
             sent = sock.send(data.msg)
             if (data.msg.decode("utf-8") == ";;1" # want to do transection before login
                 or data.msg.decode("utf-8") == "l;1;" # Wrong login msg format
-                or data.msg.decode("utf-8") == "l;1;1"): # fail to login
+                or data.msg.decode("utf-8") == "l;1;1" # fail to login
+                or data.msg.decode("utf-8") == "l;;"): # account in use
                 print(f"Closing connection to {data.addr}")
                 sel.unregister(sock)
                 sock.close()
@@ -269,10 +272,12 @@ def process_login(command):
     print("account_pin: " + get_acct(ac_num).acct_pin)
     if get_acct(ac_num):
         print("find account")
+        if get_acct(ac_num).acct_status == False:
+            return 2
         if get_acct(ac_num).acct_pin == ac_pin:
             print("pin matches")
-            return True
-    return False
+            return 0
+    return 1
 
 def check_login_format(command):
     command = command.split(";")
